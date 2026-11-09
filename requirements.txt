@@ -1,0 +1,35 @@
+# Google Earth Engine
+earthengine-api
+
+# Geospatial
+geopandas
+shapely
+pyproj
+fiona
+
+# Data
+pandas
+numpy
+python-dateutil
+
+# Analysis
+statsmodels  # STL decomposition
+scipy        # correlation tests
+scikit-learn  # for later modelling phase
+
+# Visualization
+matplotlib
+seaborn
+folium
+Pillow
+branca
+matplotlib-scalebar
+
+# Utilities
+tqdm
+pyyaml
+click
+
+# Jupyter (for the jupyter service)
+jupyterlab
+ipykernel

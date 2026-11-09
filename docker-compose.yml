@@ -1,0 +1,108 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────
+# Mauritania Satellite Built-up Indices Pipeline
+# ─────────────────────────────────────────────────────────────
+#
+# Services:
+#   gee_export   → pulls data from Google Earth Engine
+#   clean        → cleans raw CSVs (inf, missing, dust artifacts)
+#   analyse      → STL decomposition + lag correlations
+#   jupyter      → interactive exploration (optional)
+#
+# Usage:
+#   First time GEE auth:
+#     docker compose run --rm gee_export earthengine authenticate
+#
+#   Run full pipeline:
+#     docker compose run --rm gee_export
+#     docker compose run --rm clean
+#     docker compose run --rm analyse
+#
+#   Or step by step with custom args:
+#     docker compose run --rm gee_export python src/01_gee_export.py \
+#       --shapefile /data/polygons/nouakchott_moughataa.shp \
+#       --zone_field moughataa \
+#       --start 2015-01-01 --end 2026-01-01
+# ─────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Step 1: Pull from Google Earth Engine ──────────────────
+  gee_export:
+    build: .
+    container_name: sat_gee_export
+    volumes:
+      - ./data:/data                        # input polygons + output CSVs
+      - ./src:/app/src                      # hot-reload source code
+      - ./config.py:/app/config.py
+      - ./.config/earthengine:/root/.config/earthengine  # GEE credentials (local folder)
+    environment:
+      - GEE_PROJECT=${GEE_PROJECT}          # set in .env file
+      - PYTHONUNBUFFERED=1
+    command: >
+      python src/01_gee_export.py
+        --shapefile /data/polygons/${SHAPEFILE:-nouakchott.shp}
+        --zone_field ${ZONE_FIELD:-moughataa}
+        --start ${START_DATE:-2015-01-01}
+        --end ${END_DATE:-2026-01-01}
+        --output /data/raw/
+        --max_cloud ${MAX_CLOUD:-30}
+
+  # ── Step 2: Clean raw data ──────────────────────────────────
+  clean:
+    build: .
+    container_name: sat_clean
+    volumes:
+      - ./data:/data
+      - ./src:/app/src
+      - ./config.py:/app/config.py
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: >
+      python src/02_clean.py
+        --input /data/raw/builtup_indices_monthly_NEW.csv
+        --output /data/processed/builtup_clean.csv
+        --report /data/processed/quality_report.csv
+
+  # ── Step 3: Decompose + Correlate ──────────────────────────
+  analyse:
+    build: .
+    container_name: sat_analyse
+    volumes:
+      - ./data:/data
+      - ./src:/app/src
+      - ./config.py:/app/config.py
+      - ./outputs:/outputs             # charts, correlation tables
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: >
+      python src/03_analyse.py
+        --input /data/processed/builtup_clean.csv
+        --output /outputs/
+
+  # ── Optional: Jupyter for exploration ──────────────────────
+  jupyter:
+    build: .
+    container_name: sat_jupyter
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./data:/data
+      - ./notebooks:/app/notebooks
+      - ./src:/app/src
+      - ./outputs:/outputs
+      - ./.config/earthengine:/root/.config/earthengine
+    environment:
+      - GEE_PROJECT=${GEE_PROJECT}
+      - PYTHONUNBUFFERED=1
+    command: >
+      jupyter lab
+        --ip=0.0.0.0
+        --port=8888
+        --no-browser
+        --allow-root
+        --NotebookApp.token=${JUPYTER_TOKEN:-mauritania}
+
+# Note: GEE credentials are mounted from ./.config/earthengine/
+# Make sure this folder exists on your server with valid credentials
